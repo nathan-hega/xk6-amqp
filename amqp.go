@@ -10,8 +10,8 @@ const version = "v0.0.1"
 type Amqp struct {
 	Version    string
 	Connection *amqpDriver.Connection
-	Queue     *Queue
-	Exchange  *Exchange
+	Queue      *Queue
+	Exchange   *Exchange
 }
 
 type AmqpOptions struct {
@@ -19,11 +19,13 @@ type AmqpOptions struct {
 }
 
 type PublishOptions struct {
-	QueueName string
-	Body      string
-	Exchange  string
-	Mandatory bool
-	Immediate bool
+	QueueName     string
+	Body          string
+	Exchange      string
+	Mandatory     bool
+	Immediate     bool
+	ReplyTo       string
+	CorrelationId string
 }
 
 type ConsumeOptions struct {
@@ -53,6 +55,19 @@ func (amqp *Amqp) Start(options AmqpOptions) error {
 	amqp.Connection = conn
 	amqp.Queue.Connection = conn
 	amqp.Exchange.Connection = conn
+
+	// ch, err := conn.Channel()
+	// go func() {
+	// 	for amqpReturn := range ch.NotifyReturn(make(chan amqpDriver.Return)) {
+	// 		correlationID := amqpReturn.CorrelationId
+	// 		log.Printf("Publish Returned! << Code: %v, Reason: %v, Correlation ID: %v", amqpReturn.ReplyCode, amqpReturn.ReplyText, correlationID)
+	// 	}
+
+	// 	for amqpConfirm := range ch.NotifyPublish(make(chan amqpDriver.Confirmation)) {
+	// 		log.Printf("Publish Confirmed! << Confirm: %v", amqpConfirm)
+	// 	}
+
+	// }()
 	return err
 }
 
@@ -61,6 +76,7 @@ func (amqp *Amqp) Publish(options PublishOptions) error {
 	if err != nil {
 		return err
 	}
+	// ch.Confirm(true)
 	defer ch.Close()
 
 	return ch.Publish(
@@ -69,8 +85,10 @@ func (amqp *Amqp) Publish(options PublishOptions) error {
 		options.Mandatory,
 		options.Immediate,
 		amqpDriver.Publishing{
-			ContentType: "text/plain",
-			Body:        []byte(options.Body),
+			ContentType:   "text/plain",
+			Body:          []byte(options.Body),
+			CorrelationId: options.CorrelationId,
+			ReplyTo:       options.ReplyTo,
 		},
 	)
 }
@@ -97,7 +115,8 @@ func (amqp *Amqp) Listen(options ListenOptions) error {
 
 	go func() {
 		for d := range msgs {
-			options.Listener(string(d.Body))
+			reply := string(d.Body) + "|" + d.ReplyTo + "|" + d.CorrelationId
+			options.Listener(reply)
 		}
 	}()
 	return nil
@@ -108,7 +127,7 @@ func init() {
 	queue := Queue{}
 	exchange := Exchange{}
 	generalAmqp := Amqp{
-		Version:   version,
+		Version:  version,
 		Queue:    &queue,
 		Exchange: &exchange,
 	}
